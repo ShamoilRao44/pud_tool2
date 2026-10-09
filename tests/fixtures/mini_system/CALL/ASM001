@@ -1,0 +1,7 @@
+         CSECT ASM001
+         AMODE 31
+         RMODE ANY
+         USING *,R15
+         EQU 0,0
+         BAKR R14,0
+         END

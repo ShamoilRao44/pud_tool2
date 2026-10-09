@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "counts_by_type": {"type": "object"},
+    "counts_by_subtype": {"type": "object"},
+    "unclassified": {"type": "array"},
+    "folder_hint_conflicts": {"type": "array"},
+    "source_snapshot_id": {"type": "string"}
+  },
+  "required": ["counts_by_type", "counts_by_subtype", "unclassified", "folder_hint_conflicts", "source_snapshot_id"],
+  "additionalProperties": true
+}

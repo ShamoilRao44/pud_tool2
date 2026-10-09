@@ -1,0 +1,1 @@
+- Conservative default: treat ambiguous or heuristic matches as evidence-backed facts only; unresolved references remain open issues and are never auto-resolved.

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "nodes": {"type": "array"},
+    "edges": {"type": "array"},
+    "degrees": {"type": "object"},
+    "cycles": {"type": "array"},
+    "components": {"type": "array"},
+    "layers": {"type": "array"}
+  },
+  "required": ["nodes", "edges", "degrees", "cycles", "components", "layers"],
+  "additionalProperties": true
+}

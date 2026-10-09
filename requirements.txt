@@ -1,0 +1,4 @@
+Flask==3.1.0
+python-dotenv==1.0.1
+jsonschema==4.23.0
+pytest==8.3.3

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "defined_names": {"type": "object"}
+  },
+  "required": ["defined_names"],
+  "additionalProperties": true
+}

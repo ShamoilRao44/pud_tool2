@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "checks": {"type": "array"},
+    "checks_total": {"type": "integer"},
+    "passed": {"type": "integer"},
+    "warnings": {"type": "integer"},
+    "failed": {"type": "integer"},
+    "verified": {"type": "boolean"}
+  },
+  "required": ["checks", "checks_total", "passed", "warnings", "failed", "verified"],
+  "additionalProperties": true
+}
