@@ -511,7 +511,8 @@ class Stage1Inventory(Stage):
         anomaly_types = sorted({item["type"] for item in findings})
         for anomaly_type in anomaly_types:
             found = [evidence for item in findings if item["type"] == anomaly_type for evidence in item["evidence"]]
-            lines.append(f"- {anomaly_type}: {len(found)} ({', '.join(f'{entry['file']}:{entry['line']}' for entry in found[:5])})")
+            locations = ", ".join(f"{entry['file']}:{entry['line']}" for entry in found[:5])
+            lines.append(f"- {anomaly_type}: {len(found)} ({locations})")
         lines.extend(["", "## 9. Verification V01-V20", "", "| Check | Status | Details |", "|---|---|---|"])
         for check in verification["checks"]:
             lines.append(f"| {check['id']} {check['name']} | {check['status']} | {check['detail'].replace('|', '/')} |")
