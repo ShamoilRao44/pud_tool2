@@ -21,6 +21,7 @@ class AppConfig:
     ignore_patterns: tuple[str, ...]
     known_external_prefixes: tuple[str, ...]
     known_external_names: tuple[str, ...]
+    folder_hints: tuple[str, ...]
 
 
 def _parse_bool(value: str | None, default: bool = False) -> bool:
@@ -41,12 +42,20 @@ def load_config(source_dir: str | None = None, env_file: str | None = None) -> A
     source_path = Path(chosen_source_dir).expanduser()
     if not source_path.is_dir():
         raise ValueError(f"SOURCE_DIR does not exist or is not a directory: {chosen_source_dir}")
+    source_path = source_path.resolve()
+    try:
+        next(source_path.iterdir(), None)
+        if not any(path.is_file() for path in source_path.rglob("*")):
+            raise ValueError(f"SOURCE_DIR is empty: {source_path}")
+    except OSError as exc:
+        raise ValueError(f"SOURCE_DIR cannot be read: {source_path}: {exc}") from exc
 
     output_dir = env_values.get("OUTPUT_DIR", "./output")
     main_program = env_values.get("MAIN_PROGRAM")
     ignore_patterns = tuple(part.strip() for part in str(env_values.get("IGNORE_PATTERNS", "")).split(",") if part.strip())
     known_external_prefixes = tuple(part.strip() for part in str(env_values.get("KNOWN_EXTERNAL_PREFIXES", "")).split(",") if part.strip())
     known_external_names = tuple(part.strip() for part in str(env_values.get("KNOWN_EXTERNAL_NAMES", "")).split(",") if part.strip())
+    folder_hints = tuple(part.strip() for part in str(env_values.get("FOLDER_HINTS", "")).split(",") if part.strip())
 
     return AppConfig(
         source_dir=str(source_path),
@@ -61,4 +70,5 @@ def load_config(source_dir: str | None = None, env_file: str | None = None) -> A
         ignore_patterns=ignore_patterns,
         known_external_prefixes=known_external_prefixes,
         known_external_names=known_external_names,
+        folder_hints=folder_hints,
     )

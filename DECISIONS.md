@@ -1,1 +1,14 @@
 - Conservative default: treat ambiguous or heuristic matches as evidence-backed facts only; unresolved references remain open issues and are never auto-resolved.
+- Stage 1 classifies by extension and source content; configured folder hints are only a fallback and never override explicit language evidence.
+- Fixed format is inferred from numeric six-column sequence fields on at least one third of the file's physical lines; the parsed code area is columns 8-72, while beyond-column-72 text is retained only as anomaly evidence.
+- Source decoding tries UTF-8 first and CP1252 second, replacing undecodable bytes only as a final fallback so binary-like inputs remain inventoryable.
+- Configured known external prefixes/names default to empty; unknown vendor names therefore remain unresolved unless a workspace explicitly classifies them as external.
+- Extensionless HLASM is recognized by CSECT content, JCL by EXEC control statements, BMS by its extension or map definition marker, and unknown content remains inventoried with an unsupported-language gap.
+- CICS orchestration input is considered present when JCL, BMS, or a generic DEFINE PROGRAM/TRANSACTION/FILE/MAPSET/MAP statement is found.
+- Entry-point E2 candidates are COBOL programs/fragments with no resolved inbound reference; configured E1 and JCL-derived E4 candidates remain separately identified.
+- Trees with one source file receive a V17 warning rather than failure; empty trees fail before a run is created.
+- Removed fixture-specific inventory, references, entry points, gaps, anomalies, and fabricated verification results from the Stage 1 producer; the application now derives these records solely from configured input.
+- The independent recall scanner uses a separate character tokenizer and token-sequence counting path; mismatches fail verification instead of being normalized away.
+- Source output is rejected when OUTPUT_DIR resolves inside SOURCE_DIR so runs and tests cannot mutate analyzed input trees.
+- Copybook names and COBOL level-01 items are indexed as resolvable definitions; duplicate definitions remain AMBIGUOUS and produce an open gap.
+- An unresolved executable target is recorded as UNDEFINED_INTERNAL_TARGET, an unresolved include/copy/resource as MISSING_ARTIFACT, and duplicate definitions as AMBIGUOUS_TARGET because available source alone cannot select one definition.

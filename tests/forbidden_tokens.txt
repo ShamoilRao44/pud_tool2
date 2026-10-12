@@ -1,0 +1,1 @@
+# Add forbidden literals one per line; comment lines are ignored.

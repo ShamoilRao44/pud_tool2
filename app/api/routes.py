@@ -13,6 +13,11 @@ from app.api.errors import ApiError
 api_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 
 
+def _output_root() -> Path:
+    cfg = current_app.config.get("APP_CONFIG")
+    return Path(cfg.output_dir if cfg else "output")
+
+
 @api_bp.route("/health", methods=["GET"])
 def health():
     try:
@@ -58,7 +63,7 @@ def create_run():
     if not result["ok"]:
         raise ApiError("PIPELINE_FAILED", "pipeline failed", 500)
     run_id = result["run_id"]
-    manifest_path = Path("output") / run_id / "run_manifest.json"
+    manifest_path = _output_root() / run_id / "run_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else result["manifest"]
     stage_response = result["stages"][0]
     response = {
@@ -69,8 +74,18 @@ def create_run():
         "verification": stage_response["verification"],
         "stage1_running_confirmed": True,
         "manifest": manifest,
+        "evidence_pack_path": stage_response["artifacts_by_name"].get("stage1_evidence_pack", {}).get("path"),
+        "recall": {key: stage_response["verification"]["recall"][key] for key in ("checked_types", "mismatches")},
     }
     return jsonify(response)
+
+
+@api_bp.route("/runs/<run_id>/stages/1/evidence-pack", methods=["GET"])
+def get_evidence_pack(run_id: str):
+    evidence_path = _output_root() / run_id / "stage1" / "stage1_evidence_pack.md"
+    if not evidence_path.is_file():
+        raise ApiError("EVIDENCE_PACK_NOT_FOUND", f"Evidence pack for run {run_id} not found", 404)
+    return evidence_path.read_text(encoding="utf-8"), 200, {"Content-Type": "text/markdown; charset=utf-8"}
 
 
 @api_bp.route("/stages/<int:stage_number>/run", methods=["POST"])
@@ -85,7 +100,7 @@ def stage_run(stage_number: int):
 
 @api_bp.route("/runs", methods=["GET"])
 def list_runs():
-    output_dir = Path("output")
+    output_dir = _output_root()
     runs = []
     if output_dir.exists():
         for p in sorted(output_dir.iterdir(), reverse=True):
@@ -98,7 +113,7 @@ def list_runs():
 
 @api_bp.route("/runs/<run_id>", methods=["GET"])
 def get_run(run_id: str):
-    manifest_path = Path("output") / run_id / "run_manifest.json"
+    manifest_path = _output_root() / run_id / "run_manifest.json"
     if not manifest_path.exists():
         raise ApiError("RUN_NOT_FOUND", f"Run {run_id} not found", 404)
     return jsonify(json.loads(manifest_path.read_text(encoding="utf-8")))
@@ -106,7 +121,7 @@ def get_run(run_id: str):
 
 @api_bp.route("/runs/<run_id>/stages/<int:stage_number>", methods=["GET"])
 def get_stage_summary(run_id: str, stage_number: int):
-    manifest_path = Path("output") / run_id / "run_manifest.json"
+    manifest_path = _output_root() / run_id / "run_manifest.json"
     if not manifest_path.exists():
         raise ApiError("RUN_NOT_FOUND", f"Run {run_id} not found", 404)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -121,10 +136,10 @@ def get_artifact(run_id: str, stage_number: int, artifact_name: str):
     artifact_name = artifact_name.replace("..", "")
     if artifact_name.startswith("/") or "/../" in artifact_name or ".." in artifact_name:
         raise ApiError("INVALID_ARTIFACT_NAME", "Artifact name must be a safe relative name", 400)
-    manifest_path = Path("output") / run_id / "run_manifest.json"
+    manifest_path = _output_root() / run_id / "run_manifest.json"
     if not manifest_path.exists():
         raise ApiError("RUN_NOT_FOUND", f"Run {run_id} not found", 404)
-    artifact_path = Path("output") / run_id / f"stage{stage_number}" / f"{artifact_name}.json"
+    artifact_path = _output_root() / run_id / f"stage{stage_number}" / f"{artifact_name}.json"
     if not artifact_path.exists() or not artifact_path.is_file():
         raise ApiError("ARTIFACT_NOT_FOUND", "Artifact not found", 404)
     try:
@@ -137,7 +152,7 @@ def get_artifact(run_id: str, stage_number: int, artifact_name: str):
 
 @api_bp.route("/runs/<run_id>/stages/<int:stage_number>/report", methods=["GET"])
 def get_report(run_id: str, stage_number: int):
-    report_path = Path("output") / run_id / f"stage{stage_number}" / "stage1_summary.md"
+    report_path = _output_root() / run_id / f"stage{stage_number}" / "stage1_summary.md"
     if not report_path.exists():
         raise ApiError("REPORT_NOT_FOUND", "Report not found", 404)
     return report_path.read_text(encoding="utf-8"), 200, {"Content-Type": "text/markdown; charset=utf-8"}

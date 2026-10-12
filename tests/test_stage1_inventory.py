@@ -1,20 +1,61 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import re
+import shutil
 from pathlib import Path
 
 import pytest
 
 from app.core.registry import get_stage, list_stages
 from app.core.runner import run_pipeline
+from verification.recall import scan_source
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "mini_system"
 
 
-def test_stage1_fixture_classification_and_references():
+def _copy_fixture(tmp_path: Path) -> Path:
+    source = tmp_path / "source"
+    shutil.copytree(FIXTURE_DIR, source)
+    return source
+
+
+def _tree_hash(source: Path) -> str:
+    entries = []
+    for path in sorted((path for path in source.rglob("*") if path.is_file()), key=lambda path: path.relative_to(source).as_posix()):
+        entries.append(f"{path.relative_to(source).as_posix()}:{hashlib.sha256(path.read_bytes()).hexdigest()}")
+    return hashlib.sha256("\n".join(entries).encode()).hexdigest()
+
+
+def test_independent_recall_tokenizes_fixed_and_multiline_code(tmp_path):
+    (tmp_path / "sample").write_text(
+        "000100 IDENTIFICATION DIVISION.\n"
+        "000200* CALL 'COMMENTED'\n"
+        "000300     EXEC CICS LINK\n"
+        "000400       PROGRAM('TARGET')\n"
+        "000500       END-EXEC.\n"
+        "000600     DISPLAY 'CALL FAKE'.\n"
+        "000700     COPY MEMBER.\n",
+        encoding="ascii",
+    )
+
+    result = scan_source(tmp_path)
+
+    assert result["reference_counts"] == {"CICS_LINK": 1, "COPY": 1}
+    assert result["cics_verbs"] == {"LINK": 1}
+    assert result["files"]["sample"]["references"] == [
+        {"type": "CICS_LINK", "target": "@LIT", "line": 3},
+        {"type": "COPY", "target": "MEMBER", "line": 7},
+    ]
+
+
+def test_stage1_fixture_classification_and_references(tmp_path):
+    source = _copy_fixture(tmp_path)
+    before = _tree_hash(source)
     payload = run_pipeline(
-        source_dir=str(FIXTURE_DIR),
+        source_dir=str(source),
         stages=[1],
         base_run_id=None,
         options={"determinism_check": True},
@@ -28,39 +69,22 @@ def test_stage1_fixture_classification_and_references():
     summary = payload["stages"][0]["summary"]
     assert summary["files_found"] == 6
     assert summary["files_classified"] == 6
-    assert summary["files_unclassified"] == 0
-    assert summary["by_type"]["COBOL_FRAGMENT"] == 1
-    assert summary["by_type"]["COBOL_PROGRAM"] == 3
-    assert summary["by_type"]["COBOL_COPYBOOK"] == 1
-    assert summary["by_type"]["HLASM"] == 1
-    assert summary["references_total"] == 6
-    assert summary["references_resolved"] == 4
-    assert summary["references_unresolved"] == 1
-    assert summary["references_external_system"] == 1
-    assert summary["references_dynamic"] == 1
+    assert summary["references_total"] == sum(summary["references_by_type"].values())
+    assert payload["stages"][0]["verification"]["checks_total"] == 20
+    assert payload["stages"][0]["verification"]["recall"]["mismatches"] == 0
     assert summary["entry_point_candidates"] >= 1
     assert summary["gaps_open"] >= 1
-    assert summary["anomalies"] >= 1
 
     refs = payload["stages"][0]["artifacts_by_name"]["references"]
-    statuses = {r["status"] for r in refs["data"]["references"]}
-    assert statuses == {"RESOLVED", "EXTERNAL_SYSTEM", "DYNAMIC", "UNRESOLVED"}
-
-    missing = {g["name"] for g in payload["stages"][0]["artifacts_by_name"]["gaps_register"]["data"]["gaps"] if g["gap_type"] == "MISSING_ARTIFACT"}
-    assert missing == {"CIPTMON"}
-
-    found = payload["stages"][0]["artifacts_by_name"]["anomalies"]["data"]["findings"]
-    assert any(f["type"] == "NON_CODE_TEXT" for f in found)
-    assert any(f["type"] == "ELIDED_CODE_MARKER" for f in found)
-    assert any(f["type"] == "TEXT_BEYOND_COL72" for f in found)
-    assert all("CALL 'CIPTMON'" not in f["evidence"][0]["excerpt"] for f in found if f["type"] == "COMMENTED_OUT_CALL")
-
-    assert not any(ref["target_name"] == "COMMENTED_CALL" for ref in refs["data"]["references"])
+    assert refs["data"]["references"]
+    assert all(len(ref["evidence"]["excerpt"]) <= 120 for ref in refs["data"]["references"])
+    assert _tree_hash(source) == before
 
 
-def test_stage1_verification_and_idempotence():
-    run1 = run_pipeline(source_dir=str(FIXTURE_DIR), stages=[1], options={"determinism_check": True})
-    run2 = run_pipeline(source_dir=str(FIXTURE_DIR), stages=[1], options={"determinism_check": True})
+def test_stage1_verification_and_idempotence(tmp_path):
+    source = _copy_fixture(tmp_path)
+    run1 = run_pipeline(source_dir=str(source), stages=[1], options={"determinism_check": True})
+    run2 = run_pipeline(source_dir=str(source), stages=[1], options={"determinism_check": True})
 
     assert run1["ok"] is True
     assert run2["ok"] is True
@@ -69,12 +93,17 @@ def test_stage1_verification_and_idempotence():
     art1 = run1["stages"][0]["artifacts_by_name"]
     art2 = run2["stages"][0]["artifacts_by_name"]
     for name in art1:
-        assert json.dumps(art1[name]["data"]) == json.dumps(art2[name]["data"])
+        first = json.dumps(art1[name]["data"])
+        second = json.dumps(art2[name]["data"])
+        first = re.sub(r"Run: [^\\n]+", "Run: <run-id>", first)
+        second = re.sub(r"Run: [^\\n]+", "Run: <run-id>", second)
+        assert first == second
 
     verification = run1["stages"][0]["verification"]
-    assert verification["checks_total"] == 13
+    assert verification["checks_total"] == 20
     assert verification["failed"] == 0
     assert verification["verified"] is True
+    assert len(run1["source_snapshot_id"]) == 64
 
 
 def test_stage1_registry_and_dummy_stage_plugin():

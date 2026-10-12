@@ -12,7 +12,7 @@ from app.core.registry import get_stage, list_stages
 from app.stages.stage1_inventory import Stage1Inventory
 
 
-_TOOL_VERSION = "0.1.0"
+_TOOL_VERSION = "0.2.0"
 
 
 def _canonical_json(data: Any) -> str:
@@ -25,11 +25,11 @@ def _run_id_for(snapshot_id: str) -> str:
     return f"{now}_{snapshot_id[:8]}_{counter:04d}"
 
 
-def _source_snapshot_id(source_dir: str) -> str:
+def _source_snapshot_id(source_dir: str, ignore_patterns: tuple[str, ...] = ()) -> str:
     root = Path(source_dir)
     rels = []
     for path in sorted(root.rglob("*"), key=lambda p: p.relative_to(root).as_posix()):
-        if path.is_file():
+        if path.is_file() and not any(part in ignore_patterns for part in path.relative_to(root).parts):
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             rels.append(f"{path.relative_to(root).as_posix()}:{digest}")
     return hashlib.sha256("\n".join(rels).encode("utf-8")).hexdigest()
@@ -40,13 +40,17 @@ def run_pipeline(source_dir: str | None = None, stages: list[int] | None = None,
     cfg = load_config(source_dir=source_dir)
     source_dir = cfg.source_dir
     stages = stages or [1]
-    snapshot_id = _source_snapshot_id(source_dir)
+    snapshot_id = _source_snapshot_id(source_dir, cfg.ignore_patterns)
     run_id = _run_id_for(snapshot_id)
     output_dir = Path(cfg.output_dir)
+    source_root = Path(source_dir).resolve()
+    resolved_output_dir = output_dir.resolve()
+    if resolved_output_dir == source_root or source_root in resolved_output_dir.parents:
+        raise ValueError(f"OUTPUT_DIR must be outside SOURCE_DIR: {resolved_output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
     run_dir = output_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    ctx = RunContext(run_id=run_id, source_dir=source_dir, output_dir=str(output_dir), config=cfg, base_run_id=base_run_id)
+    ctx = RunContext(run_id=run_id, source_dir=source_dir, output_dir=str(output_dir), config=cfg, base_run_id=base_run_id, source_snapshot_id=snapshot_id, options=options)
     stage_results = []
     artifact_values = []
     per_stage_manifest = []
@@ -64,8 +68,8 @@ def run_pipeline(source_dir: str | None = None, stages: list[int] | None = None,
         result.verification["warnings"] = sum(1 for c in checks if c.status == "WARN")
         result.verification["failed"] = sum(1 for c in checks if c.status == "FAIL")
         result.verification["verified"] = result.verification["failed"] == 0
-        result.status = "PASSED" if result.verification["failed"] == 0 else "FAILED_VERIFICATION"
-        if result.verification["warnings"]:
+        result.status = "FAILED_VERIFICATION" if result.verification["failed"] else "PASSED"
+        if not result.verification["failed"] and result.verification["warnings"]:
             result.status = "PASSED_WITH_WARNINGS"
         stage_results.append({
             "stage": result.stage,
@@ -90,12 +94,15 @@ def run_pipeline(source_dir: str | None = None, stages: list[int] | None = None,
     manifest = {
         "run_id": run_id,
         "snapshot_id": snapshot_id,
-        "config": {"source_dir": source_dir, "output_dir": str(output_dir), "main_program": cfg.main_program, "allow_source_override": cfg.allow_source_override, "sequence_area_strict": cfg.sequence_area_strict},
+        "source_identity": {"source_dir": str(Path(source_dir).resolve()), "file_count": sum(1 for path in Path(source_dir).rglob("*") if path.is_file() and not any(part in cfg.ignore_patterns for part in path.relative_to(source_dir).parts)), "total_bytes": sum(path.stat().st_size for path in Path(source_dir).rglob("*") if path.is_file() and not any(part in cfg.ignore_patterns for part in path.relative_to(source_dir).parts)), "snapshot_id": snapshot_id},
+        "config": {"source_dir": str(Path(source_dir).resolve()), "output_dir": str(output_dir), "main_program": cfg.main_program, "allow_source_override": cfg.allow_source_override, "sequence_area_strict": cfg.sequence_area_strict, "ignore_patterns": list(cfg.ignore_patterns), "known_external_names": list(cfg.known_external_names), "known_external_prefixes": list(cfg.known_external_prefixes), "folder_hints": list(cfg.folder_hints)},
         "stages": per_stage_manifest,
         "start_time": str(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")),
         "end_time": str(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")),
         "duration_seconds": 0,
         "artifact_list": artifact_values,
+        "evidence_pack_path": next((stage["artifacts_by_name"]["stage1_evidence_pack"]["path"] for stage in stage_results if "stage1_evidence_pack" in stage["artifacts_by_name"]), None),
+        "recall": next(({"checked_types": stage["verification"]["recall"]["checked_types"], "mismatches": stage["verification"]["recall"]["mismatches"]} for stage in stage_results if "recall" in stage["verification"]), None),
         "check_summary": {
             "checks_total": sum(s["verification"]["checks_total"] for s in stage_results),
             "passed": sum(s["verification"]["passed"] for s in stage_results),
@@ -105,6 +112,10 @@ def run_pipeline(source_dir: str | None = None, stages: list[int] | None = None,
         "tool_version": _TOOL_VERSION,
     }
     ctx.finalize_manifest(manifest)
+    for stage_result in stage_results:
+        evidence_pack = stage_result.get("artifacts_by_name", {}).get("stage1_evidence_pack", {}).get("data")
+        if evidence_pack:
+            print(evidence_pack, end="")
     latest = output_dir / "latest.json"
     latest.write_text(json.dumps({"run_id": run_id}, sort_keys=True), encoding="utf-8")
     payload = {

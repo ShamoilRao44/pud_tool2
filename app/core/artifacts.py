@@ -37,7 +37,7 @@ class ArtifactStore:
             if schema_path.exists():
                 with schema_path.open("r", encoding="utf-8") as fh:
                     schema = json.load(fh)
-                jsonschema.validate(payload, schema)
+                jsonschema.validate(data, schema)
         path = artifact_dir / f"{artifact_name}.json"
         path.write_text(canonical_json(payload) + "\n", encoding="utf-8")
         return path, payload

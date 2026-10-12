@@ -10,12 +10,14 @@ from app.core.artifacts import ArtifactStore
 
 
 class RunContext:
-    def __init__(self, run_id: str, source_dir: str, output_dir: str, config: AppConfig, base_run_id: str | None = None):
+    def __init__(self, run_id: str, source_dir: str, output_dir: str, config: AppConfig, base_run_id: str | None = None, source_snapshot_id: str = "", options: dict[str, Any] | None = None):
         self.run_id = run_id
         self.source_dir = source_dir
         self.output_dir = Path(output_dir)
         self.config = config
         self.base_run_id = base_run_id
+        self.source_snapshot_id = source_snapshot_id
+        self.options = options or {}
         self.run_dir = self.output_dir / run_id
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.artifact_store = ArtifactStore(self.run_dir)
@@ -33,8 +35,8 @@ class RunContext:
             artifact_name=name,
             data=data,
             schema_name=schema,
-            source_snapshot_id=self.run_id.split("_")[-1],
-            tool_version="0.1.0",
+            source_snapshot_id=self.source_snapshot_id,
+            tool_version="0.2.0",
         )
         self._artifact_map[(stage, name)] = str(path)
         return payload
